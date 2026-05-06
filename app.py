@@ -5,22 +5,29 @@ import os
 
 app = Flask(__name__)
 
-# =========================
-# 🔑 只改這兩個地方
-# =========================
 LINE_TOKEN = "ywb3PURnF6Iraz6L90mfGPl8XjF43EwSu8c+AFpLiSPzmD1TKU/3f/OczG2Ljy4N3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pmkDalO7RjD2SboVGef4m1rZqbbApeFhZWknnJmOTuTCwdB04t89/1O/w1cDnyilFU="
 AFFILIATE_ID = "16358460019"
 
-# =========================
 
 
-# ===== 蝦皮轉分潤（完整安全版）=====
+# ===== 展開所有短網址（關鍵）=====
+def expand_url(url):
+    try:
+        r = requests.get(url, allow_redirects=True, timeout=5)
+        return r.url
+    except:
+        return url
+
+
+# ===== 蝦皮轉分潤 =====
 def convert_shopee(url):
     try:
-        # 強制去除空白
         url = url.strip()
 
-        # encode
+        # 🔥 先展開短網址（重點）
+        if "shp.ee" in url or "s.shopee.tw" in url:
+            url = expand_url(url)
+
         encoded = urllib.parse.quote(url, safe='')
 
         new_link = (
@@ -67,8 +74,7 @@ def callback():
         if event.get("type") == "message":
             msg = event["message"]["text"]
 
-            # ===== 判斷蝦皮連結 =====
-            if "tw.shp.ee" in msg:
+            if "shopee" in msg or "shp.ee" in msg:
 
                 link = convert_shopee(msg)
 
@@ -92,7 +98,6 @@ def callback():
     return "OK"
 
 
-# ===== Render 必備（不能改）=====
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
