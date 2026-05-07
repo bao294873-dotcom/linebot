@@ -6,9 +6,9 @@ import os
 app = Flask(__name__)
 
 # ===== 改成你自己的 =====
-LINE_TOKEN = os.environ.get("MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU=")
-AFFILIATE_ID = os.environ.get("16358460019")
-BITLY_TOKEN = os.environ.get("920dd5e5ae21d0c75cd3cfc3d50dc53b47576713")
+LINE_TOKEN = "MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU="
+AFFILIATE_ID = "16358460019"
+BITLY_TOKEN = "920dd5e5ae21d0c75cd3cfc3d50dc53b47576713"
 
 
 # ===== 展開短網址 =====
