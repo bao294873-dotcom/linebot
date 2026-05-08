@@ -108,44 +108,43 @@ def callback():
 
     for event in data.get("events", []):
 
-        if event.get("type") == "message":
+if event.get("type") == "message":
 
-            msg = event["message"]["text"]
+    msg = event["message"]["text"]
 
-            print("收到訊息 =", msg)
+    print("收到訊息 =", msg)
 
-         if "http" in msg:
+    if "http" in msg:
 
-                # 轉分潤
-                link = convert_shopee(msg)
+        # 轉分潤
+        link = convert_shopee(msg)
 
-                print("分潤連結 =", link)
+        print("分潤連結 =", link)
 
-                if link:
+        if link:
 
-                    # 短網址
-                    short_link = shorten_url(link)
+            short_link = shorten_url(link)
 
-                    print("短網址 =", short_link)
+            print("短網址 =", short_link)
 
-                    reply(
-                        event["replyToken"],
-                        f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"
-                    )
+            reply(
+                event["replyToken"],
+                f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"
+            )
 
-                else:
+        else:
 
-                    reply(
-                        event["replyToken"],
-                        "轉換失敗，請再試一次🙏"
-                    )
+            reply(
+                event["replyToken"],
+                "轉換失敗🙏"
+            )
 
-            else:
+    else:
 
-                reply(
-                    event["replyToken"],
-                    "請貼蝦皮商品連結給我🙏"
-                )
+        reply(
+            event["replyToken"],
+            "請貼網址給我🙏"
+        )
 
     return "OK"
 
