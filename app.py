@@ -58,22 +58,19 @@ def shorten_url(long_url):
         result = r.json()
         return result["data"]["picseeUrl"]
     except Exception as e:
-        print("PicSee錯誤 =", e)
         return long_url
 
-# ===== 新增：取得酷澎每日特價 =====
+# ===== 取得酷澎每日特價 (加入直接回報錯誤功能) =====
 def get_coupang_goldbox():
     try:
         method = "GET"
         path = "/v2/providers/affiliate_open_api/apis/openapi/v1/products/goldbox"
         
-        # 處理 UTC 時間
-        os.environ['TZ'] = 'GMT+8'
+        os.environ['TZ'] = 'GMT+0'
         if hasattr(time, 'tzset'):
             time.tzset()
         datetime_str = time.strftime('%y%m%d') + 'T' + time.strftime('%H%M%S') + 'Z'
         
-        # 產生 HMAC 簽章
         message = datetime_str + method + path
         signature = hmac.new(
             bytes(COUPANG_SECRET_KEY, "utf-8"),
@@ -90,16 +87,18 @@ def get_coupang_goldbox():
         }
         
         r = requests.get(url, headers=headers, timeout=10)
+        
+        # 成功取得資料
         if r.status_code == 200:
-            return r.json().get("data", [])
+            return r.json().get("data", []), "OK"
+        # API 拒絕存取，回傳真實錯誤內容
         else:
-            print("酷澎 API 錯誤 =", r.text)
-            return []
+            return [], f"狀態碼: {r.status_code}\n內容: {r.text}"
+            
     except Exception as e:
-        print("抓取酷澎發生例外錯誤 =", e)
-        return []
+        return [], f"系統例外錯誤: {str(e)}"
 
-# ===== 修改：LINE 回覆 (支援卡片格式) =====
+# ===== LINE 回覆 =====
 def reply(reply_token, messages_list):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
@@ -108,10 +107,9 @@ def reply(reply_token, messages_list):
     }
     data = {
         "replyToken": reply_token,
-        "messages": messages_list # 改為接收陣列
+        "messages": messages_list
     }
-    r = requests.post(url, headers=headers, json=data)
-    print("LINE REPLY STATUS =", r.status_code)
+    requests.post(url, headers=headers, json=data)
 
 
 # ===== 主程式 =====
@@ -125,39 +123,38 @@ def callback():
 
             # === 情境 1：使用者輸入「特價」===
             if msg == "特價":
-                deals = get_coupang_goldbox()
+                # 這裡會同時接收「商品資料」與「錯誤訊息」
+                deals, error_msg = get_coupang_goldbox()
                 
+                # 如果沒有商品，就把真實的錯誤訊息丟給 LINE！
                 if not deals:
-                    reply(reply_token, [{"type": "text", "text": "目前無法取得酷澎特價商品，請稍後再試🙏"}])
+                    reply(reply_token, [{"type": "text", "text": f"酷澎抓取失敗 😭\n\n🔍 偵錯原因：\n{error_msg}"}])
                     continue
 
-                # 準備組裝 LINE 輪播卡片 (最多 10 張)
                 columns = []
                 for item in deals[:10]:
                     columns.append({
-                        "thumbnailImageUrl": item.get("productImage", ""), # 商品圖片
-                        "title": str(item.get("productName", ""))[:40],    # 標題最多 40 字
-                        "text": f"特價: NT$ {item.get('productPrice', '')}", # 價格
+                        "thumbnailImageUrl": item.get("productImage", ""),
+                        "title": str(item.get("productName", ""))[:40],
+                        "text": f"特價: NT$ {item.get('productPrice', '')}",
                         "actions": [
                             {
                                 "type": "uri",
                                 "label": "立即搶購",
-                                "uri": item.get("productUrl", "") # 酷澎的分潤網址
+                                "uri": item.get("productUrl", "")
                             }
                         ]
                     })
                 
-                # 建立卡片模板
                 carousel_message = {
                     "type": "template",
-                    "altText": "今日酷澎特價商品出爐囉！", # 通知列顯示的文字
+                    "altText": "今日酷澎特價商品出爐囉！",
                     "template": {
                         "type": "carousel",
                         "columns": columns
                     }
                 }
                 
-                # 傳送卡片
                 reply(reply_token, [carousel_message])
 
             # === 情境 2：收到蝦皮網址 ===
