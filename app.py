@@ -45,7 +45,7 @@ def convert_shopee(url):
     except:
         return None
 
-# ===== PicSee 縮網址 =====
+# ===== PicSee 縮網址 (診斷版) =====
 def shorten_url(long_url):
     try:
         api_url = "https://api.picsee.io/v1/links"
@@ -54,12 +54,23 @@ def shorten_url(long_url):
             "Content-Type": "application/json"
         }
         data = {"target": long_url}
-        r = requests.post(api_url, headers=headers, json=data)
+        
+        r = requests.post(api_url, headers=headers, json=data, timeout=10)
         result = r.json()
-        return result["data"]["picseeUrl"]
-    except Exception as e:
-        return long_url
 
+        # 檢查是否成功 (200 或 201 通常是成功)
+        if r.status_code in [200, 201]:
+            # 確保資料結構正確
+            if "data" in result and "picseeUrl" in result["data"]:
+                return result["data"]["picseeUrl"], "OK"
+            else:
+                return long_url, f"結構異常: {result}"
+        else:
+            # 失敗時，回傳狀態碼與錯誤訊息
+            return long_url, f"HTTP {r.status_code}: {result.get('message', '未知錯誤')}"
+
+    except Exception as e:
+        return long_url, f"系統錯誤: {str(e)}"
 # ===== 改用：搜尋酷澎商品 API =====
 def search_coupang_deals():
     try:
@@ -151,17 +162,20 @@ def callback():
                             }
                         ]
                     })
-
-            # === 情境 2：收到蝦皮網址 ===
+# === 情境 2：收到蝦皮網址 ===
             elif "http" in msg:
                 link = convert_shopee(msg)
                 if link:
-                    short_link = shorten_url(link)
-                    reply(reply_token, [{"type": "text", "text": f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"}])
+                    # 🔴 這裡改成接收兩個變數
+                    short_link, picsee_status = shorten_url(link)
+                    
+                    if picsee_status == "OK":
+                        reply(reply_token, [{"type": "text", "text": f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"}])
+                    else:
+                        # 顯示縮網址失敗的具體原因
+                        reply(reply_token, [{"type": "text", "text": f"分潤成功但縮網址失敗 ⚠️\n\n🔍 原因：{picsee_status}\n\n👉 原連結：{short_link}"}])
                 else:
-                    reply(reply_token, [{"type": "text", "text": "轉換失敗🙏"}])
-
-            # === 情境 3：其他訊息 ===
+                    reply(reply_token, [{"type": "text", "text": "分潤轉換失敗🙏"}])            # === 情境 3：其他訊息 ===
             else:
                 reply(reply_token, [{"type": "text", "text": "請貼蝦皮網址給我，或輸入「特價」查看酷澎優惠🙏"}])
 
