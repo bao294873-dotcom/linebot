@@ -60,11 +60,14 @@ def shorten_url(long_url):
     except Exception as e:
         return long_url
 
-# ===== 取得酷澎每日特價 (加入台灣伺服器指定) =====
-def get_coupang_goldbox():
+# ===== 改用：搜尋酷澎商品 API =====
+def search_coupang_deals():
     try:
+        # 用 URL 編碼把中文字轉成 API 看得懂的格式
+        keyword = urllib.parse.quote("特價") 
         method = "GET"
-        path = "/v2/providers/affiliate_open_api/apis/openapi/v1/products/goldbox"
+        # 改成呼叫 search 搜尋端點，並限制抓取 10 筆
+        path = f"/v2/providers/affiliate_open_api/apis/openapi/v1/products/search?keyword={keyword}&limit=10"
         
         os.environ['TZ'] = 'GMT+0'
         if hasattr(time, 'tzset'):
@@ -84,17 +87,20 @@ def get_coupang_goldbox():
         headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
-            "X-MARKET": "TW"  # 🔥 關鍵在這裡！告訴酷澎 Gateway 轉發到台灣的 VDC
+            "X-MARKET": "TW" # 🔥 一樣要貼上台灣專屬標籤
         }
         
         r = requests.get(url, headers=headers, timeout=10)
         
-        # 成功取得資料
         if r.status_code == 200:
-            return r.json().get("data", []), "OK"
-        # API 拒絕存取，回傳真實錯誤內容
+            # 搜尋 API 的回傳結構稍微不一樣，商品資料包在 productData 裡面
+            products = r.json().get("data", {}).get("productData", [])
+            return products, "OK"
         else:
             return [], f"狀態碼: {r.status_code}\n內容: {r.text}"
+            
+    except Exception as e:
+        return [], f"系統例外錯誤: {str(e)}"
             
     except Exception as e:
         return [], f"系統例外錯誤: {str(e)}"
@@ -124,10 +130,9 @@ def callback():
 
             # === 情境 1：使用者輸入「特價」===
             if msg == "特價":
-                # 這裡會同時接收「商品資料」與「錯誤訊息」
-                deals, error_msg = get_coupang_goldbox()
+                # 🔴 記得把這裡改成呼叫 search_coupang_deals
+                deals, error_msg = search_coupang_deals() 
                 
-                # 如果沒有商品，就把真實的錯誤訊息丟給 LINE！
                 if not deals:
                     reply(reply_token, [{"type": "text", "text": f"酷澎抓取失敗 😭\n\n🔍 偵錯原因：\n{error_msg}"}])
                     continue
@@ -137,7 +142,7 @@ def callback():
                     columns.append({
                         "thumbnailImageUrl": item.get("productImage", ""),
                         "title": str(item.get("productName", ""))[:40],
-                        "text": f"特價: NT$ {item.get('productPrice', '')}",
+                        "text": f"價格: NT$ {item.get('productPrice', '')}",
                         "actions": [
                             {
                                 "type": "uri",
@@ -146,17 +151,6 @@ def callback():
                             }
                         ]
                     })
-                
-                carousel_message = {
-                    "type": "template",
-                    "altText": "今日酷澎特價商品出爐囉！",
-                    "template": {
-                        "type": "carousel",
-                        "columns": columns
-                    }
-                }
-                
-                reply(reply_token, [carousel_message])
 
             # === 情境 2：收到蝦皮網址 ===
             elif "http" in msg:
