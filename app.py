@@ -60,7 +60,7 @@ def shorten_url(long_url):
     except Exception as e:
         return long_url
 
-# ===== 取得酷澎每日特價 (加入直接回報錯誤功能) =====
+# ===== 取得酷澎每日特價 (加入台灣伺服器指定) =====
 def get_coupang_goldbox():
     try:
         method = "GET"
@@ -83,7 +83,8 @@ def get_coupang_goldbox():
         url = "https://api-gateway.coupang.com" + path
         headers = {
             "Authorization": authorization,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "X-MARKET": "TW"  # 🔥 關鍵在這裡！告訴酷澎 Gateway 轉發到台灣的 VDC
         }
         
         r = requests.get(url, headers=headers, timeout=10)
@@ -97,7 +98,6 @@ def get_coupang_goldbox():
             
     except Exception as e:
         return [], f"系統例外錯誤: {str(e)}"
-
 # ===== LINE 回覆 =====
 def reply(reply_token, messages_list):
     url = "https://api.line.me/v2/bot/message/reply"
