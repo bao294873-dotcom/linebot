@@ -45,37 +45,21 @@ def convert_shopee(url):
     except:
         return None
 
-# ===== PicSee 縮網址 (加強防護版) =====
+# ===== 改用 TinyURL 縮網址 (救援方案) =====
 def shorten_url(long_url):
     try:
-        # 🔴 已經幫你改回最正確的官方 .io 網址
-        api_url = "https://api.picsee.io/v1/links" 
-        headers = {
-            "X-API-TOKEN": PICSEE_TOKEN,
-            "Content-Type": "application/json"
-        }
-        data = {"target": long_url}
+        # 呼叫 TinyURL 的免費 API
+        api_url = f"https://tinyurl.com/api-create.php?url={long_url}"
+        r = requests.get(api_url, timeout=10)
         
-        r = requests.post(api_url, headers=headers, json=data, timeout=10)
-        
-        # 增加防護：檢查 PicSee 有沒有乖乖回傳 JSON
-        try:
-            result = r.json()
-        except Exception:
-            return long_url, f"PicSee 網站無回應 (HTTP {r.status_code})"
-
-        # 檢查是否成功縮短
-        if r.status_code in [200, 201]:
-            if "data" in result and "picseeUrl" in result["data"]:
-                return result["data"]["picseeUrl"], "OK"
-            else:
-                return long_url, f"資料結構異常: {result}"
+        # 成功的話會直接回傳短網址字串
+        if r.status_code == 200:
+            return r.text, "OK"
         else:
-            return long_url, f"被拒絕 (HTTP {r.status_code}): {result.get('message', '未知錯誤')}"
+            return long_url, f"TinyURL 發生錯誤 (HTTP {r.status_code})"
 
     except Exception as e:
-        return long_url, f"網路連線異常: {str(e)}"
-
+        return long_url, f"縮網址連線異常: {str(e)}"
 # ===== 改用：搜尋酷澎商品 API =====
 def search_coupang_deals():
     try:
