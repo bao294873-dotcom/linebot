@@ -99,55 +99,51 @@ def reply(reply_token, text):
 @app.route("/callback", methods=["POST"])
 def callback():
 
-    # ===== 測試環境變數 =====
-    print("LINE_TOKEN =", LINE_TOKEN)
-    print("AFFILIATE_ID =", AFFILIATE_ID)
-    print("BITLY_TOKEN =", BITLY_TOKEN)
-
     data = request.json
+
+    print("收到資料 =", data)
 
     for event in data.get("events", []):
 
-if event.get("type") == "message":
+        if event.get("type") == "message":
 
-    msg = event["message"]["text"]
+            msg = event["message"]["text"]
 
-    print("收到訊息 =", msg)
+            print("收到訊息 =", msg)
 
-    if "http" in msg:
+            if "http" in msg:
 
-        # 轉分潤
-        link = convert_shopee(msg)
+                # 轉分潤
+                link = convert_shopee(msg)
 
-        print("分潤連結 =", link)
+                print("分潤連結 =", link)
 
-        if link:
+                if link:
 
-            short_link = shorten_url(link)
+                    short_link = shorten_url(link)
 
-            print("短網址 =", short_link)
+                    print("短網址 =", short_link)
 
-            reply(
-                event["replyToken"],
-                f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"
-            )
+                    reply(
+                        event["replyToken"],
+                        f"🔥 已幫你轉好優惠連結，優惠券每日有限量，請盡早使用\n\n👉 {short_link}"
+                    )
 
-        else:
+                else:
 
-            reply(
-                event["replyToken"],
-                "轉換失敗🙏"
-            )
+                    reply(
+                        event["replyToken"],
+                        "轉換失敗🙏"
+                    )
 
-    else:
+            else:
 
-        reply(
-            event["replyToken"],
-            "請貼網址給我🙏"
-        )
+                reply(
+                    event["replyToken"],
+                    "請貼網址給我🙏"
+                )
 
     return "OK"
-
 
 # ===== Render 啟動 =====
 if __name__ == "__main__":
