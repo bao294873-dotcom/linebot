@@ -98,6 +98,7 @@ def get_coupang_goldbox():
             
     except Exception as e:
         return [], f"系統例外錯誤: {str(e)}"
+
 # ===== LINE 回覆 =====
 def reply(reply_token, messages_list):
     url = "https://api.line.me/v2/bot/message/reply"
