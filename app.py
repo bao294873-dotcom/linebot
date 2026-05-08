@@ -45,10 +45,11 @@ def convert_shopee(url):
     except:
         return None
 
-# ===== PicSee 縮網址 (診斷版) =====
+# ===== PicSee 縮網址 (加強防護版) =====
 def shorten_url(long_url):
     try:
-        api_url = "https://api.picsee.pro/v1/links"
+        # 🔴 已經幫你改回最正確的官方 .io 網址
+        api_url = "https://api.picsee.io/v1/links" 
         headers = {
             "X-API-TOKEN": PICSEE_TOKEN,
             "Content-Type": "application/json"
@@ -56,21 +57,25 @@ def shorten_url(long_url):
         data = {"target": long_url}
         
         r = requests.post(api_url, headers=headers, json=data, timeout=10)
-        result = r.json()
+        
+        # 增加防護：檢查 PicSee 有沒有乖乖回傳 JSON
+        try:
+            result = r.json()
+        except Exception:
+            return long_url, f"PicSee 網站無回應 (HTTP {r.status_code})"
 
-        # 檢查是否成功 (200 或 201 通常是成功)
+        # 檢查是否成功縮短
         if r.status_code in [200, 201]:
-            # 確保資料結構正確
             if "data" in result and "picseeUrl" in result["data"]:
                 return result["data"]["picseeUrl"], "OK"
             else:
-                return long_url, f"結構異常: {result}"
+                return long_url, f"資料結構異常: {result}"
         else:
-            # 失敗時，回傳狀態碼與錯誤訊息
-            return long_url, f"HTTP {r.status_code}: {result.get('message', '未知錯誤')}"
+            return long_url, f"被拒絕 (HTTP {r.status_code}): {result.get('message', '未知錯誤')}"
 
     except Exception as e:
-        return long_url, f"系統錯誤: {str(e)}"
+        return long_url, f"網路連線異常: {str(e)}"
+
 # ===== 改用：搜尋酷澎商品 API =====
 def search_coupang_deals():
     try:
