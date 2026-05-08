@@ -114,7 +114,7 @@ def callback():
 
             print("收到訊息 =", msg)
 
-            if "shopee" in msg or "shp.ee" in msg:
+         if "http" in msg:
 
                 # 轉分潤
                 link = convert_shopee(msg)
