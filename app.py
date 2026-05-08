@@ -68,7 +68,7 @@ def get_coupang_goldbox():
         path = "/v2/providers/affiliate_open_api/apis/openapi/v1/products/goldbox"
         
         # 處理 UTC 時間
-        os.environ['TZ'] = 'GMT+0'
+        os.environ['TZ'] = 'GMT+8'
         if hasattr(time, 'tzset'):
             time.tzset()
         datetime_str = time.strftime('%y%m%d') + 'T' + time.strftime('%H%M%S') + 'Z'
