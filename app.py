@@ -48,7 +48,7 @@ def convert_shopee(url):
 # ===== PicSee 縮網址 (診斷版) =====
 def shorten_url(long_url):
     try:
-        api_url = "https://api.picsee.io/v1/links"
+        api_url = "https://api.picsee.pro/v1/links"
         headers = {
             "X-API-TOKEN": PICSEE_TOKEN,
             "Content-Type": "application/json"
