@@ -126,11 +126,11 @@ def webhook():
                         "template": {
                             "type": "buttons",
                             "title": "✨優惠券已套用成功✨",
-                            "text": "🔥 點擊下方立即結帳享折扣\n⚠️ 折扣券採限量使用，用完提前截止\n⏰ 請儘速完成訂單，避免錯過優惠價格",
+                            "text": "🔥 點擊下方立即結帳享折扣\n⚠️ 折扣券採限量使用\n⏰ 請儘速完成訂單",
                             "actions": [
                                 {
                                     "type": "uri",
-                                    "label": "🛒 出發!結帳去 🛒",
+                                    "label": "🛒 出發～結帳去 🛒",
                                     "uri": target_url
                                 }
                             ]
