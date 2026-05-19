@@ -1,149 +1,142 @@
 from flask import Flask, request
 import requests
 import urllib.parse
-import os
 import csv
 from io import StringIO
 
 app = Flask(__name__)
 
-# ===== 你的資料 =====
-LINE_TOKEN = "MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU="
-AFFILIATE_ID = "16358460019"
+# ===== 1. 請填入你自己的設定值 =====
+LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='  # 你的 LINE Token
+SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
+SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
 
-# ===== 新增：你的試算表 ID (從網址複製出來的那段) =====
-SHEET_ID = "1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk"
+# ===== 2. 讀取 Google 試算表的函數 =====
+def get_deals_from_sheet(sheet_id):
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    response = requests.get(csv_url)
+    response.encoding = 'utf-8'
+    
+    deals = []
+    if response.status_code == 200:
+        csv_data = StringIO(response.text)
+        reader = csv.DictReader(csv_data)
+        for row in reader:
+            deals.append(row)
+    return deals
 
-# ===== 免金鑰：直接讀取試算表 =====
-def get_deals_from_sheet(keyword):
-    try:
-        # 直接去下載 Google 表單的 CSV 格式資料
-        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
-        r = requests.get(url, timeout=10)
-        r.encoding = 'utf-8' # 確保中文不會變亂碼
+# ===== 3. 將資料轉成 LINE 滑動卡片的函數 =====
+def create_carousel_message(deals):
+    columns = []
+    for deal in deals[:10]: # LINE 滑動卡片最多只能放 10 頁
+        encoded_url = urllib.parse.quote(deal.get('你的分潤短網址', ''), safe=':/?&=')
+        encoded_image_url = urllib.parse.quote(deal.get('圖片網址', ''), safe=':/?&=')
         
-        # 將下載下來的文字轉換成字典格式
-        csv_reader = csv.DictReader(StringIO(r.text))
-        records = list(csv_reader)
-        
-        # 篩選出符合「關鍵字」的商品
-        matched_deals = []
-        for row in records:
-            if str(row.get("觸發關鍵字", "")).strip() == keyword:
-                matched_deals.append(row)
-        return matched_deals
-    except Exception as e:
-        print("讀取表單失敗 =", e)
-        return None
-
-# ===== 展開短網址 =====
-def expand_url(url):
-    try:
-        r = requests.get(url, allow_redirects=True, timeout=5)
-        return r.url
-    except:
-        return url
-
-# ===== 蝦皮轉分潤 =====
-def convert_shopee(url):
-    try:
-        url = url.strip()
-        if "shp.ee" in url or "s.shopee.tw" in url:
-            url = expand_url(url)
-        encoded = urllib.parse.quote(url, safe='')
-        new_link = (
-            "https://s.shopee.tw/an_redir?"
-            f"origin_link={encoded}"
-            f"&affiliate_id={AFFILIATE_ID}"
-            "&sub_id=linebot"
-        )
-        return new_link
-    except:
-        return None
-
-# ===== TinyURL 縮網址 =====
-def shorten_url(long_url):
-    try:
-        api_url = f"https://tinyurl.com/api-create.php?url={long_url}"
-        r = requests.get(api_url, timeout=10)
-        
-        if r.status_code == 200:
-            return r.text, "OK"
-        else:
-            return long_url, f"TinyURL 錯誤 (HTTP {r.status_code})"
-    except Exception as e:
-        return long_url, f"縮網址異常: {str(e)}"
-
-# ===== LINE 回覆 =====
-def reply(reply_token, messages_list):
-    url = "https://api.line.me/v2/bot/message/reply"
-    headers = {
-        "Authorization": f"Bearer {LINE_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "replyToken": reply_token,
-        "messages": messages_list
-    }
-    requests.post(url, headers=headers, json=data)
-
-# ===== 主程式 =====
-@app.route("/callback", methods=["POST"])
-def callback():
-    data = request.json
-    for event in data.get("events", []):
-        if event.get("type") == "message":
-            msg = event["message"]["text"].strip()
-            reply_token = event["replyToken"]
-
-            # === 引擎 1：讀取 Google 試算表 ===
-            deals = get_deals_from_sheet(msg)
-            
-            if deals:
-                columns = []
-                for item in deals[:10]:
-                    columns.append({
-                        "thumbnailImageUrl": str(item.get("圖片網址", "")).strip(),
-                        "title": str(item.get("商品名稱", ""))[:40],
-                        "text": str(item.get("價格", ""))[:60],
-                        "actions": [
-                            {
-                                "type": "uri",
-                                "label": "立即搶購",
-                                "uri": str(item.get("你的分潤短網址", "")).strip()
-                            }
-                        ]
-                    })
-                
-                carousel_message = {
-                    "type": "template",
-                    "altText": f"{msg} 專屬優惠來囉！",
-                    "template": {
-                        "type": "carousel",
-                        "columns": columns
-                    }
+        column = {
+            "thumbnailImageUrl": encoded_image_url,
+            "imageBackgroundColor": "#FFFFFF",
+            "title": deal.get('商品名稱', '')[:40],
+            "text": f"🔥 特價: {deal.get('價格', '')}\n平台: {deal.get('平台', '')}",
+            "defaultAction": {
+                "type": "uri",
+                "label": "查看詳情",
+                "uri": encoded_url
+            },
+            "actions": [
+                {
+                    "type": "uri",
+                    "label": "👉 前往搶購",
+                    "uri": encoded_url
                 }
-                reply(reply_token, [carousel_message])
-                continue 
+            ]
+        }
+        columns.append(column)
+        
+    return {
+        "type": "template",
+        "altText": "最新優惠來囉！請在手機上查看",
+        "template": {
+            "type": "carousel",
+            "columns": columns,
+            "imageAspectRatio": "square",
+            "imageSize": "cover"
+        }
+    }
 
-            # === 引擎 2：蝦皮網址自動轉分潤 ===
-            if "http" in msg:
-                link = convert_shopee(msg)
-                if link:
-                    short_link, status = shorten_url(link)
-                    if status == "OK":
-                        reply(reply_token, [{"type": "text", "text": f"🔥 已幫你轉好優惠連結\n\n👉 {short_link}"}])
-                    else:
-                        reply(reply_token, [{"type": "text", "text": f"轉換成功，但縮網址失敗\n\n👉 原連結：{short_link}"}])
+# ===== 4. 處理 LINE 傳來訊息的主程式 =====
+@app.route("/", methods=['POST'])
+def webhook():
+    body = request.get_json()
+    
+    if 'events' in body:
+        for event in body['events']:
+            if event['type'] == 'message' and event['message']['type'] == 'text':
+                reply_token = event['replyToken']
+                user_message = event['message']['text'].strip()
+                
+                # --------------------------------------------------
+                # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
+                # --------------------------------------------------
+                if user_message.startswith("http"):
+                    
+                    target_url = user_message
+                    
+                    # 確認傳來的是蝦皮網址，才幫它加上分潤尾巴
+                    if "shopee.tw" in target_url or "shope.ee" in target_url:
+                        if "?" in target_url:
+                            target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
+                        else:
+                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
+
+                    # 建立華麗的「按鈕模板訊息」
+                    reply_message = {
+                        "type": "template",
+                        "altText": "🎁 優惠券已成功套用！請查看並結帳",
+                        "template": {
+                            "type": "buttons",
+                            "title": "🎁 優惠券已成功套用 🎁",
+                            "text": "⚠️ 點選下方按鈕將自動套用折價券\n❗ 點擊後請盡速結帳保留優惠\n📅 若當日未結帳，隔日需重新發送",
+                            "actions": [
+                                {
+                                    "type": "uri",
+                                    "label": "🛒 點我前往結帳 🛒",
+                                    "uri": target_url # 這裡已經是帶有你分潤 ID 的網址了
+                                }
+                            ]
+                        }
+                    }
+                    
+                # --------------------------------------------------
+                # 情境 B：使用者傳送「關鍵字」(觸發試算表滑動卡片)
+                # --------------------------------------------------
                 else:
-                    reply(reply_token, [{"type": "text", "text": "轉換失敗🙏"}])
-            
-            # === 情境 3：其他訊息 ===
-            else:
-                reply(reply_token, [{"type": "text", "text": "請貼蝦皮網址給我，或輸入關鍵字查看優惠喔🙏"}])
-
-    return "OK"
+                    all_deals = get_deals_from_sheet(SHEET_ID)
+                    
+                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
+                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
+                    
+                    if matched_deals:
+                        reply_message = create_carousel_message(matched_deals)
+                    else:
+                        reply_message = {
+                            "type": "text",
+                            "text": "目前沒有找到相關的優惠喔！試試看輸入【今日秒殺】或直接貼上你想買的蝦皮商品網址給我！"
+                        }
+                        
+                # --------------------------------------------------
+                # 將結果回傳給使用者
+                # --------------------------------------------------
+                headers = {
+                    'Authorization': f'Bearer {LINE_TOKEN}',
+                    'Content-Type': 'application/json'
+                }
+                data = {
+                    "replyToken": reply_token,
+                    "messages": [reply_message]
+                }
+                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
+                
+    return 'OK'
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=10000)
