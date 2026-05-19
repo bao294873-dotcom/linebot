@@ -6,19 +6,24 @@ from io import StringIO
 
 app = Flask(__name__)
 
-# ===== 1. 請填入你自己的設定值 =====
+# ==========================================
+# 🔐 1. 請在此填入你自己的金鑰與設定
+# ==========================================
 LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='  # 你的 LINE Token
 SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
 SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
 
 
-# ===== ✨ 新增這個：讓排程工具「戳」進來的網頁首頁 (防睡眠) =====
+# ==========================================
+# ✨ 2. 防睡眠網頁首頁 (讓 cron-job 用 GET 戳進來)
+# ==========================================
 @app.route("/", methods=['GET'])
 def index():
     return "機器人運作中，請勿打擾 🤖", 200
 
-
-# ===== 2. 讀取 Google 試算表的函數 =====
+# ==========================================
+# 📦 3. 讀取 Google 試算表的函數
+# ==========================================
 def get_deals_from_sheet(sheet_id):
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     response = requests.get(csv_url)
@@ -32,7 +37,9 @@ def get_deals_from_sheet(sheet_id):
             deals.append(row)
     return deals
 
-# ===== 3. 將資料轉成 LINE 滑動卡片的函數 =====
+# ==========================================
+# 🎨 4. 將資料轉成 LINE 滑動卡片的函數
+# ==========================================
 def create_carousel_message(deals):
     columns = []
     for deal in deals[:10]: # LINE 滑動卡片最多只能放 10 頁
@@ -70,7 +77,9 @@ def create_carousel_message(deals):
         }
     }
 
-# ===== 4. 處理 LINE 傳來訊息的主程式 =====
+# ==========================================
+# 🤖 5. 處理 LINE 傳來訊息的主程式 (Webhook)
+# ==========================================
 @app.route("/", methods=['POST'])
 def webhook():
     body = request.get_json()
@@ -82,15 +91,6 @@ def webhook():
                 user_message = event['message']['text'].strip()
                 
                 # --------------------------------------------------
-                # --------------------------------------------------
-                # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
-                # --------------------------------------------------
-                if user_message.startswith("http"):
-                    
-                    target_url = user_message
-                    
-                    # ✨【強力洗碼邏輯】：如果是蝦皮，先強行把問號後面的所有原廠分潤參數通通砍掉！
-                    if "shopee.tw" in tar# --------------------------------------------------
                 # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
                 # --------------------------------------------------
                 if user_message.startswith("http"):
@@ -98,11 +98,10 @@ def webhook():
                     target_url = user_message
                     
                     try:
-                        # ✨【反攔截核心】：如果遇到蝦皮短網址，先在後台「假裝點擊」把它還原成原始長網址！
+                        # 💥【反攔截核心】：如果遇到蝦皮短網址，先在後台「假裝點擊」把它解開還原成原始長網址！
                         if "s.shopee.tw" in target_url or "shope.ee" in target_url:
-                            # 傳送一個默默的請求去跟蝦皮要真實網址 (追蹤轉跳)
                             response = requests.head(target_url, allow_redirects=True, timeout=5)
-                            target_url = response.url # 這時候 target_url 會變成展開後的乾淨長網址
+                            target_url = response.url
                         
                         # 只要是蝦皮長網址，一刀切斷問號後面別人的分潤參數（包含 utm_source 等）
                         if "shopee.tw" in target_url:
@@ -123,15 +122,15 @@ def webhook():
                     # 建立華麗的「按鈕模板訊息」
                     reply_message = {
                         "type": "template",
-                        "altText": "🎁 優惠券已套用完成",
+                        "altText": "🎁 優惠券已成功套用！請查看並結帳",
                         "template": {
                             "type": "buttons",
-                            "title": "🎁 優惠券已套用完成",
-                            "text": "⚠️ 折扣券採限量使用，用完提前截止\n⏰ 點擊後請盡速結帳保留優惠\n🔥 點擊下方立即結帳享折扣",
+                            "title": "✨優惠券已套用成功✨",
+                            "text": "🔥 點擊下方立即結帳享折扣\n⚠️ 折扣券採限量使用，用完提前截止\n⏰ 請儘速完成訂單，避免錯過優惠價格",
                             "actions": [
                                 {
                                     "type": "uri",
-                                    "label": "🛒出發買買買🛒",
+                                    "label": "🛒 出發!結帳去 🛒",
                                     "uri": target_url
                                 }
                             ]
