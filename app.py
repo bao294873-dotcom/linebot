@@ -90,19 +90,31 @@ def webhook():
                     target_url = user_message
                     
                     # ✨【強力洗碼邏輯】：如果是蝦皮，先強行把問號後面的所有原廠分潤參數通通砍掉！
-                    if "shopee.tw" in target_url:
-                        # 如果網址裡面有包含商品 ID 的問號，只保留問號前的乾淨網址
-                        if "?" in target_url:
-                            # 很多網址會長這樣 /product/123/456?credential_token=...
-                            # 我們只取問號前面的乾淨商品連結
-                            target_url = target_url.split("?")[0]
+                    if "shopee.tw" in tar# --------------------------------------------------
+                # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
+                # --------------------------------------------------
+                if user_message.startswith("http"):
+                    
+                    target_url = user_message
+                    
+                    try:
+                        # ✨【反攔截核心】：如果遇到蝦皮短網址，先在後台「假裝點擊」把它還原成原始長網址！
+                        if "s.shopee.tw" in target_url or "shope.ee" in target_url:
+                            # 傳送一個默默的請求去跟蝦皮要真實網址 (追蹤轉跳)
+                            response = requests.head(target_url, allow_redirects=True, timeout=5)
+                            target_url = response.url # 這時候 target_url 會變成展開後的乾淨長網址
                         
-                        # 重新連上你專屬的分潤代碼
-                        target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
-                        
-                    elif "shope.ee" in target_url:
-                        # 如果是 app 複製出來的短網址，本質上也是別人的分潤連結
-                        # 最安全的做法是直接在後面補上你的 ID 進行覆蓋嘗試
+                        # 只要是蝦皮長網址，一刀切斷問號後面別人的分潤參數（包含 utm_source 等）
+                        if "shopee.tw" in target_url:
+                            if "?" in target_url:
+                                target_url = target_url.split("?")[0]
+                            
+                            # 重新黏上你專屬的分潤代碼，確保佣金歸你
+                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
+                            
+                    except Exception as e:
+                        print(f"還原短網址發生錯誤: {e}")
+                        # 如果後台解網址失敗，就保底用原本的網址硬塞
                         if "?" in target_url:
                             target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
                         else:
