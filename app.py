@@ -11,6 +11,13 @@ LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3N
 SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
 SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
 
+
+# ===== ✨ 新增這個：讓排程工具「戳」進來的網頁首頁 (防睡眠) =====
+@app.route("/", methods=['GET'])
+def index():
+    return "機器人運作中，請勿打擾 🤖", 200
+
+
 # ===== 2. 讀取 Google 試算表的函數 =====
 def get_deals_from_sheet(sheet_id):
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
@@ -100,7 +107,7 @@ def webhook():
                                 {
                                     "type": "uri",
                                     "label": "🛒 點我前往結帳 🛒",
-                                    "uri": target_url # 這裡已經是帶有你分潤 ID 的網址了
+                                    "uri": target_url
                                 }
                             ]
                         }
