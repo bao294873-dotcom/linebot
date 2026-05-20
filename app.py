@@ -13,7 +13,6 @@ LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3N
 SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
 SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
 
-
 # ==========================================
 # ✨ 2. 防睡眠網頁首頁 (讓 cron-job 用 GET 戳進來)
 # ==========================================
@@ -98,91 +97,6 @@ def webhook():
                     target_url = user_message
                     
                     try:
-                        # 💥【反攔截核心】：如果遇到蝦皮短網址，先在後台「假裝點擊」把它解開還原成原始長網址！
+                        # 💥【反攔截核心】：遇到蝦皮短網址先解開
                         if "s.shopee.tw" in target_url or "shope.ee" in target_url:
-                            response = requests.head(target_url, allow_redirects=True, timeout=5)
-                            target_url = response.url
-                        
-                        # 只要是蝦皮長網址，一刀切斷問號後面別人的分潤參數（包含 utm_source 等）
-                        if "shopee.tw" in target_url:
-                            if "?" in target_url:
-                                target_url = target_url.split("?")[0]
-                            
-                            # 重新黏上你專屬的分潤代碼，確保佣金歸你
-                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
-                            
-                    except Exception as e:
-                        print(f"還原短網址發生錯誤: {e}")
-                        # 如果後台解網址失敗，就保底用原本的網址硬塞
-                        if "?" in target_url:
-                            target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
-                        else:
-                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
-
-                    # 建立華麗的「按鈕模板訊息」
-                    reply_message = {
-                        "type": "template",
-                        "altText": "🎁 優惠券已成功套用！請查看並結帳",
-                        "template": {
-                            "type": "buttons",
-                            "title": "✨優惠券已套用成功✨",
-                            "text": "🔥 點擊下方立即結帳享折扣\n⚠️ 折扣券採限量使用\n⏰ 請儘速完成訂單",
-                            "actions": [
-                                {
-                                    "type": "uri",
-                                    "label": "🛒 出發～結帳去 🛒",
-                                    "uri": target_url
-                                }
-                            ]
-                        }
-                    }
-                    
-                # --------------------------------------------------
-                # 情境 B：使用者傳送「關鍵字」(觸發試算表滑動卡片)
-                # --------------------------------------------------
-                else:
-                    all_deals = get_deals_from_sheet(SHEET_ID)
-                    
-                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
-                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
-                    
-                    if matched_deals:
-                        reply_message = create_carousel_message(matched_deals)
-                    else:
-                        reply_message = {
-                            "type": "text",
-                            "text": "目前沒有找到相關的優惠喔！試試看輸入【特價】或直接貼上你想買的蝦皮商品網址給我！"
-                        }
-                # --------------------------------------------------
-                # 🤫 情境 C (新增)：讓 Python 閉嘴的「靜音關鍵字」
-                # --------------------------------------------------
-                elif user_message in ["推廣優惠券", "蝦皮", "酷澎"]:
-                    # 遇到圖文選單或 LINE 後台專用的字，Python 什麼都不做，直接跳過！
-                    # 這樣就不會再噴出「找不到優惠」的預設訊息了
-                    continue
-                    
-                # --------------------------------------------------
-                # 情境 D：處理關鍵字與分類暗號 (原本最後面的 else)
-                # --------------------------------------------------
-                else:
-                    all_deals = get_deals_from_sheet(SHEET_ID)
-                    
-                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
-                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]        
-                # --------------------------------------------------
-                # 將結果回傳給使用者
-                # --------------------------------------------------
-                headers = {
-                    'Authorization': f'Bearer {LINE_TOKEN}',
-                    'Content-Type': 'application/json'
-                }
-                data = {
-                    "replyToken": reply_token,
-                    "messages": [reply_message]
-                }
-                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
-                
-    return 'OK'
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+                            response =
