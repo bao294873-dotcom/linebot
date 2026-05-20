@@ -90,4 +90,139 @@ def webhook():
                 reply_token = event['replyToken']
                 user_message = event['message']['text'].strip()
                 
-                # --------------------------------
+                # --------------------------------------------------
+                # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
+                # --------------------------------------------------
+                if user_message.startswith("http"):
+                    
+                    target_url = user_message
+                    
+                    try:
+                        # 💥【反攔截核心】：如果遇到蝦皮短網址，先在後台解開
+                        if "s.shopee.tw" in target_url or "shope.ee" in target_url:
+                            response = requests.head(target_url, allow_redirects=True, timeout=5)
+                            target_url = response.url
+                        
+                        # ✨【智慧清洗】：保留官方優惠券，只殺掉別人的分潤追蹤碼
+                        if "shopee.tw" in target_url:
+                            parsed_url = urllib.parse.urlparse(target_url)
+                            query_params = urllib.parse.parse_qs(parsed_url.query)
+                            
+                            # 定義黑名單：這些都是別人的追蹤碼，通通刪掉！
+                            bad_keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'aff_id', 'mmp_pid']
+                            for key in bad_keys:
+                                if key in query_params:
+                                    del query_params[key]
+                            
+                            # 補上你專屬的分潤 ID
+                            query_params['aff_id'] = [SHOPEE_AFF_ID]
+                            
+                            # 將乾淨的參數與原本的優惠券重新組裝成完整網址
+                            new_query = urllib.parse.urlencode(query_params, doseq=True)
+                            target_url = urllib.parse.urlunparse(
+                                (parsed_url.scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, new_query, parsed_url.fragment)
+                            )
+                            
+                    except Exception as e:
+                        print(f"處理網址發生錯誤: {e}")
+                        # 萬一失敗的保底做法
+                        if "?" in target_url:
+                            target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
+                        else:
+                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
+
+                    # 建立華麗的「按鈕模板訊息」
+                    reply_message = {
+                        "type": "template",
+                        "altText": "🎁 專屬優惠連結已產生！請查看",
+                        "template": {
+                            "type": "buttons",
+                            "title": "🎁 專屬優惠連結已產生 🎁",
+                            "text": "⚠️ 點選下方按鈕前往查看\n❗ 若有優惠券將自動保留\n📅 請盡速結帳保留優惠",
+                            "actions": [
+                                {
+                                    "type": "uri",
+                                    "label": "🛒 點我前往查看 🛒",
+                                    "uri": target_url
+                                }
+                            ]
+                        }
+                    }
+                    
+                # --------------------------------------------------
+                # 情境 B：呼叫「分類大廳」選單
+                # --------------------------------------------------
+                elif user_message in ["分類", "目錄", "特價商品"]:
+                    reply_message = {
+                        "type": "template",
+                        "altText": "請選擇您想看的特價分類",
+                        "template": {
+                            "type": "buttons",
+                            "title": "🛍️ 嚴選特價分類大廳",
+                            "text": "請點擊下方按鈕，逛逛今日專屬優惠！",
+                            "actions": [
+                                {
+                                    "type": "message",
+                                    "label": "💄 美妝保養",
+                                    "text": "找美妝"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "💻 3C家電",
+                                    "text": "找3C"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "🍼 母嬰用品",
+                                    "text": "找母嬰"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "🏠 居家生活",
+                                    "text": "找居家"
+                                }
+                            ]
+                        }
+                    }
+                    
+                # --------------------------------------------------
+                # 🤫 情境 C：讓 Python 閉嘴的「靜音關鍵字」
+                # --------------------------------------------------
+                elif user_message in ["推廣優惠券"]:
+                    # 交給 LINE 官方後台回覆，Python 跳過不處理
+                    continue
+                    
+                # --------------------------------------------------
+                # 情境 D：處理關鍵字與分類暗號
+                # --------------------------------------------------
+                else:
+                    all_deals = get_deals_from_sheet(SHEET_ID)
+                    
+                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
+                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
+                    
+                    if matched_deals:
+                        reply_message = create_carousel_message(matched_deals)
+                    else:
+                        reply_message = {
+                            "type": "text",
+                            "text": "目前沒有找到相關的優惠喔！\n你可以輸入【分類】來查看特價目錄，或直接貼上你想買的商品網址給我幫你找優惠！"
+                        }
+                        
+                # --------------------------------------------------
+                # 將結果回傳給使用者
+                # --------------------------------------------------
+                headers = {
+                    'Authorization': f'Bearer {LINE_TOKEN}',
+                    'Content-Type': 'application/json'
+                }
+                data = {
+                    "replyToken": reply_token,
+                    "messages": [reply_message]
+                }
+                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
+                
+    return 'OK'
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=10000)
