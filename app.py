@@ -5,12 +5,15 @@ import csv
 from io import StringIO
 
 app = Flask(__name__)
+
 # ==========================================
 # 🔐 1. 請在此填入你自己的金鑰與設定
 # ==========================================
 LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='  # 你的 LINE Token
 SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
 SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
+潤 ID
+
 # ==========================================
 # ✨ 2. 防睡眠網頁首頁 (讓 cron-job 用 GET 戳進來)
 # ==========================================
@@ -95,79 +98,44 @@ def webhook():
                     target_url = user_message
                     
                     try:
-                        # 💥【反攔截核心】：遇到蝦皮短網址先解開
+                        # 💥【反攔截核心】：如果遇到蝦皮短網址，先在後台解開
                         if "s.shopee.tw" in target_url or "shope.ee" in target_url:
                             response = requests.head(target_url, allow_redirects=True, timeout=5)
                             target_url = response.url
                         
-                        # 清洗網址並換上自己的分潤 ID
+                        # ✨【智慧清洗】：保留官方優惠券，只殺掉別人的分潤追蹤碼
                         if "shopee.tw" in target_url:
-                            if "?" in target_url:
-                                target_url = target_url.split("?")[0]
-                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
+                            parsed_url = urllib.parse.urlparse(target_url)
+                            query_params = urllib.parse.parse_qs(parsed_url.query)
+                            
+                            # 定義黑名單：這些都是別人的追蹤碼，通通刪掉！
+                            bad_keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'aff_id', 'mmp_pid']
+                            for key in bad_keys:
+                                if key in query_params:
+                                    del query_params[key]
+                            
+                            # 補上你專屬的分潤 ID
+                            query_params['aff_id'] = [SHOPEE_AFF_ID]
+                            
+                            # 將乾淨的參數與原本的優惠券重新組裝成完整網址
+                            new_query = urllib.parse.urlencode(query_params, doseq=True)
+                            target_url = urllib.parse.urlunparse(
+                                (parsed_url.scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, new_query, parsed_url.fragment)
+                            )
                             
                     except Exception as e:
-                        print(f"還原短網址發生錯誤: {e}")
+                        print(f"處理網址發生錯誤: {e}")
+                        # 萬一失敗的保底做法
                         if "?" in target_url:
                             target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
                         else:
                             target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
 
-                    # 建立華麗的「按鈕模板訊息」 
+                    # 建立華麗的「按鈕模板訊息」
                     reply_message = {
                         "type": "template",
-                        "altText": "🎁 優惠券已成功套用！請查看並結帳",
+                        "altText": "🎁 專屬優惠連結已產生！請查看",
                         "template": {
                             "type": "buttons",
-                            "title": "✨優惠券已套用成功✨",
-                            "text": "🔥 點擊下方立即結帳享折扣\n⚠️ 折扣券採限量使用\n⏰ 請儘速完成訂單",
-                            "actions": [
-                                {
-                                    "type": "uri",
-                                    "label": "🛒 出發～結帳去 🛒",
-                                    "uri": target_url
-                                }
-                            ]
-                        }
-                    }
-                    
-                # --------------------------------------------------
-                # 🤫 情境 B：讓 Python 閉嘴的「靜音關鍵字」
-                # --------------------------------------------------
-                elif user_message in ["推廣優惠券"]:
-                    # 遇到圖文選單專用的字，Python 直接跳過，交給 LINE 後台回覆！
-                    continue
-                    
-                # --------------------------------------------------
-                # 情境 C：處理關鍵字與分類暗號 (壓軸的 else)
-                # --------------------------------------------------
-                else:
-                    all_deals = get_deals_from_sheet(SHEET_ID)
-                    
-                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
-                    
-                    if matched_deals:
-                        reply_message = create_carousel_message(matched_deals)
-                    else:
-                        reply_message = {
-                            "type": "text",
-                            "text": "目前沒有找到相關的優惠喔！請直接貼上你想買的蝦皮商品網址給我幫你找優惠！"
-                        }
-                        
-                # --------------------------------------------------
-                # 將結果回傳給使用者
-                # --------------------------------------------------
-                headers = {
-                    'Authorization': f'Bearer {LINE_TOKEN}',
-                    'Content-Type': 'application/json'
-                }
-                data = {
-                    "replyToken": reply_token,
-                    "messages": [reply_message]
-                }
-                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
-                
-    return 'OK'
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+                            "title": "🎁 專屬優惠連結已產生 🎁",
+                            "text
