@@ -1,18 +1,34 @@
-from flask import Flask, request
+from flask import Flask, request, abort
 import requests
 import urllib.parse
 import csv
+import re
+import datetime
+import pytz  # Render 環境通常是 UTC，我們需要這個來轉成台北時間
 from io import StringIO
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, TemplateSendMessage, ButtonsTemplate, URIAction
 
 app = Flask(__name__)
 
 # ==========================================
 # 🔐 1. 請在此填入你自己的金鑰與設定
 # ==========================================
-LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='  # 你的 LINE Token
-SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
-SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
+# 你的 LINE Token
+LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU=' 
+# 你的 LINE Secret (與 handler 搭配使用)
+LINE_SECRET = 'ed8a8af9c486ff925f65153dad28698f' 
 
+# 你的試算表 ID，已幫你對過是正確的
+SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk' 
+
+# 你的蝦皮分潤 ID
+SHOPEE_AFF_ID = '16358460019' 
+
+# 建立 LINE Bot API 和 Webhook 處理器
+line_bot_api = LineBotApi(LINE_TOKEN)
+handler = WebhookHandler(LINE_SECRET)
 
 # ==========================================
 # ✨ 2. 防睡眠網頁首頁 (讓 cron-job 用 GET 戳進來)
@@ -26,16 +42,20 @@ def index():
 # ==========================================
 def get_deals_from_sheet(sheet_id):
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    response = requests.get(csv_url)
-    response.encoding = 'utf-8'
-    
-    deals = []
-    if response.status_code == 200:
-        csv_data = StringIO(response.text)
-        reader = csv.DictReader(csv_data)
-        for row in reader:
-            deals.append(row)
-    return deals
+    try:
+        response = requests.get(csv_url)
+        response.encoding = 'utf-8'
+        
+        deals = []
+        if response.status_code == 200:
+            csv_data = StringIO(response.text)
+            reader = csv.DictReader(csv_data)
+            for row in reader:
+                deals.append(row)
+        return deals
+    except Exception as e:
+        print(f"[試算表讀取錯誤] {e}")
+        return []
 
 # ==========================================
 # 🎨 4. 將資料轉成 LINE 滑動卡片的函數
@@ -70,159 +90,84 @@ def create_carousel_message(deals):
         "type": "template",
         "altText": "最新優惠來囉！請在手機上查看",
         "template": {
-            "type": "carousel",
-            "columns": columns,
-            "imageAspectRatio": "square",
-            "imageSize": "cover"
+          "type": "carousel",
+          "columns": columns,
+          "imageAspectRatio": "square",
+          "imageSize": "cover"
         }
     }
 
-# ==========================================
-# 🤖 5. 處理 LINE 傳來訊息的主程式 (Webhook)
-# ==========================================
-@app.route("/", methods=['POST'])
-def webhook():
-    body = request.get_json()
+# ============================================================
+# ⚙️ 移植自 JS 版的核心：蝦皮連結轉換
+# 步驟：展開短網址 → 清參數 → 加聯盟參數
+# 失敗時回傳 null（呼叫方收到 null 就通知使用者）
+# ============================================================
+def convert_shopee_link(original_url):
+    """
+    對應原本 JS 的 convertShopeeLink(originalUrl)
+    將原始蝦皮連結轉換為分潤連結。
+    失敗時回傳 None。
+    """
+    url = original_url
+
+    # 1. 如果是 an_redir 包過的，先抽出原始連結
+    if 'an_redir' in url:
+        # 使用 re.search 對應 JS 的 match(/origin_link=([^&]+)/)
+        match = re.search(r'origin_link=([^&]+)', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1)) # 對應 JS 的 decodeURIComponent
+
+    # 2. 展開短網址
+    # 使用 re.search 對應 JS 的 /.../i.test(url)
+    is_short_url = (
+        re.search(r'shp\.ee', url, re.IGNORECASE) or
+        re.search(r'shope\.ee', url, re.IGNORECASE) or
+        (re.search(r's\.shopee\.tw/', url, re.IGNORECASE) and 's.shopee.tw/an_redir' not in url)
+    )
+
+    if is_short_url:
+        # 對應原本 JS 的 expandShopeeShortUrl(url)
+        expanded = expand_shopee_short_url(url)
+        if not expanded:
+            return None # 展開失敗，拒絕處理
+        url = expanded
+
+    # 3. 清掉所有舊的歸因參數 (防止帶到別人的分潤)
+    # 將 JS 的 replace 對應為 Python re.sub
+    # 清除的參數包括：mmp_pid, affiliate_id, sub_id, utm_source, utm_medium, utm_campaign, uls_trackid
+    url = re.sub(r'[?&](mmp_pid|affiliate_id|sub_id|utm_source|utm_medium|utm_campaign|uls_trackid)=[^&]*', '', url)
     
-    if 'events' in body:
-        for event in body['events']:
-            if event['type'] == 'message' and event['message']['type'] == 'text':
-                reply_token = event['replyToken']
-                user_message = event['message']['text'].strip()
-                
-                # --------------------------------------------------
-                # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
-                # --------------------------------------------------
-                if user_message.startswith("http"):
-                    
-                    target_url = user_message
-                    
-                    try:
-                        # 💥【反攔截核心】：如果遇到蝦皮短網址，先在後台解開
-                        if "s.shopee.tw" in target_url or "shope.ee" in target_url:
-                            response = requests.head(target_url, allow_redirects=True, timeout=5)
-                            target_url = response.url
-                        
-                        # ✨【智慧清洗】：保留官方優惠券，只殺掉別人的分潤追蹤碼
-                        if "shopee.tw" in target_url:
-                            parsed_url = urllib.parse.urlparse(target_url)
-                            query_params = urllib.parse.parse_qs(parsed_url.query)
-                            
-                            # 定義黑名單：這些都是別人的追蹤碼，通通刪掉！
-                            bad_keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'aff_id', 'mmp_pid']
-                            for key in bad_keys:
-                                if key in query_params:
-                                    del query_params[key]
-                            
-                            # 補上你專屬的分潤 ID
-                            query_params['aff_id'] = [SHOPEE_AFF_ID]
-                            
-                            # 將乾淨的參數與原本的優惠券重新組裝成完整網址
-                            new_query = urllib.parse.urlencode(query_params, doseq=True)
-                            target_url = urllib.parse.urlunparse(
-                                (parsed_url.scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, new_query, parsed_url.fragment)
-                            )
-                            
-                    except Exception as e:
-                        print(f"處理網址發生錯誤: {e}")
-                        # 萬一失敗的保底做法
-                        if "?" in target_url:
-                            target_url = f"{target_url}&aff_id={SHOPEE_AFF_ID}"
-                        else:
-                            target_url = f"{target_url}?aff_id={SHOPEE_AFF_ID}"
+    # 清掉最後多餘的 '?'
+    if url.endswith('?'):
+        url = url[:-1]
 
-                    # 建立華麗的「按鈕模板訊息」
-                    reply_message = {
-                        "type": "template",
-                        "altText": "🎁 專屬優惠連結已產生！請查看",
-                        "template": {
-                            "type": "buttons",
-                            "title": "🎁 專屬優惠連結已產生 🎁",
-                            "text": "⚠️ 點選下方按鈕前往查看\n❗ 若有優惠券將自動保留\n📅 請盡速結帳保留優惠",
-                            "actions": [
-                                {
-                                    "type": "uri",
-                                    "label": "🛒 點我前往查看 🛒",
-                                    "uri": target_url
-                                }
-                            ]
-                        }
-                    }
-                    
-                # --------------------------------------------------
-                # 情境 B：呼叫「分類大廳」選單
-                # --------------------------------------------------
-                elif user_message in ["分類", "目錄", "特價商品"]:
-                    reply_message = {
-                        "type": "template",
-                        "altText": "請選擇您想看的特價分類",
-                        "template": {
-                            "type": "buttons",
-                            "title": "🛍️ 嚴選特價分類大廳",
-                            "text": "請點擊下方按鈕，逛逛今日專屬優惠！",
-                            "actions": [
-                                {
-                                    "type": "message",
-                                    "label": "💄 美妝保養",
-                                    "text": "找美妝"
-                                },
-                                {
-                                    "type": "message",
-                                    "label": "💻 3C家電",
-                                    "text": "找3C"
-                                },
-                                {
-                                    "type": "message",
-                                    "label": "🍼 母嬰用品",
-                                    "text": "找母嬰"
-                                },
-                                {
-                                    "type": "message",
-                                    "label": "🏠 居家生活",
-                                    "text": "找居家"
-                                }
-                            ]
-                        }
-                    }
-                    
-                # --------------------------------------------------
-                # 🤫 情境 C：讓 Python 閉嘴的「靜音關鍵字」
-                # --------------------------------------------------
-                elif user_message in ["推廣優惠券"]:
-                    # 交給 LINE 官方後台回覆，Python 跳過不處理
-                    continue
-                    
-                # --------------------------------------------------
-                # 情境 D：處理關鍵字與分類暗號
-                # --------------------------------------------------
-                else:
-                    all_deals = get_deals_from_sheet(SHEET_ID)
-                    
-                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
-                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
-                    
-                    if matched_deals:
-                        reply_message = create_carousel_message(matched_deals)
-                    else:
-                        reply_message = {
-                            "type": "text",
-                            "text": "目前沒有找到相關的優惠喔！\n你可以輸入【分類】來查看特價目錄，或直接貼上你想買的商品網址給我幫你找優惠！"
-                        }
-                        
-                # --------------------------------------------------
-                # 將結果回傳給使用者
-                # --------------------------------------------------
-                headers = {
-                    'Authorization': f'Bearer {LINE_TOKEN}',
-                    'Content-Type': 'application/json'
-                }
-                data = {
-                    "replyToken": reply_token,
-                    "messages": [reply_message]
-                }
-                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
-                
-    return 'OK'
+    # 4. 產生一個追蹤用的 sub_id (時間戳)
+    sub_id = build_sub_id() # 對應 JS 的 buildSubId()
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=10000)
+    # 5. 包上蝦皮聯盟的 an_redir 格式
+    encoded = urllib.parse.quote(url) # 對應 JS 的 encodeURIComponent
+    
+    return f"https://s.shopee.tw/an_redir?origin_link={encoded}&affiliate_id={SHOPEE_AFF_ID}&sub_id={sub_id}"
+
+# ============================================================
+# ⚙️ Helper 函數：展開蝦皮短網址 (移植自原本 JS)
+# ============================================================
+def expand_shopee_short_url(short_url):
+    """
+    對應原本 JS 的 expandShopeeShortUrl(shortUrl)
+    使用 requests (需 pip install) 模擬 GAS UrlFetchApp，獲取 Location header
+    """
+    try:
+        # 設定 User-Agent 避免被擋
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        # equivalent to UrlFetchApp.fetch(..., {followRedirects: False})
+        # 注意：使用 allow_redirects=False 來獲取 Location header
+        response = requests.get(short_url, allow_redirects=False, headers=headers, timeout=5)
+        
+        # 302 / 301 = 重導向
+        if response.status_code >= 300 and response.status_code < 400:
+            # 獲取 Location header
+            # requests 的 headers 是不分大小寫的
+            location =
