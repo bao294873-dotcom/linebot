@@ -2,123 +2,80 @@ from flask import Flask, request
 import requests
 import urllib.parse
 import csv
-import os # 用來讀取 Render 的 PORT
 from io import StringIO
-import pytz # 用來轉時區
-import datetime
 
 app = Flask(__name__)
 
 # ==========================================
 # 🔐 1. 請在此填入你自己的金鑰與設定
 # ==========================================
-# (原本代碼的設定區)
-LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU=' # 貼上你的 LINE Channel Access Token
-SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk' # 已幫你對過是正確的ID
-SHOPEE_AFF_ID = '16358460019' # 貼上你的純數字蝦皮分潤 ID
+LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='  # 你的 LINE Token
+SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'          # 你的試算表 ID
+SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
 
 
 # ==========================================
-# ✨ 2. 防睡眠網頁首頁
+# ✨ 2. 防睡眠網頁首頁 (讓 cron-job 用 GET 戳進來)
 # ==========================================
 @app.route("/", methods=['GET'])
 def index():
-    return "機器人重生中，酷澎卡片這次絕對彈出來！🤖", 200
+    return "機器人運作中，請勿打擾 🤖", 200
 
 # ==========================================
-# 📦 3. 讀取 Google 試算表的函數 (升級：精準讀取「優惠」工作表 )
+# 📦 3. 讀取 Google 試算表的函數
 # ==========================================
 def get_deals_from_sheet(sheet_id):
-    # 💥【修正細節】：強制指定讀取名為「優惠」 的工作表標籤 (修正 image_12.png 的潛在問題)
-    sheet_name = urllib.parse.quote('優惠') # 將中文名稱編碼
-    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
-    
-    try:
-        response = requests.get(csv_url, timeout=10) # 加上逾時設定，防止 Render 卡住
-        response.encoding = 'utf-8'
-        
-        deals = []
-        if response.status_code == 200:
-            csv_data = StringIO(response.text)
-            # 使用 DictReader 精準抓取標題欄位
-            reader = csv.DictReader(csv_data)
-            for row in reader:
-                deals.append(row)
-        return deals
-    except Exception as e:
-        print(f"[試算表讀取錯誤] {e}")
-        return []
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    response = requests.get(csv_url)
+    response.encoding = 'utf-8'
+    
+    deals = []
+    if response.status_code == 200:
+        csv_data = StringIO(response.text)
+        reader = csv.DictReader(csv_data)
+        for row in reader:
+            deals.append(row)
+    return deals
 
 # ==========================================
 # 🎨 4. 將資料轉成 LINE 滑動卡片的函數
 # ==========================================
 def create_carousel_message(deals):
-    columns = []
-    
-    # 預設圖片 (萬一試算表沒填時使用)
-    default_img = "https://shopee.tw/favicon.ico" # 蝦皮圖示
-    
-    for deal in deals[:10]: # LINE 滑動卡片最多只能放 10 頁
-        # 抓取資料並去除空白
-        product_name = deal.get('商品名稱', '').strip()
-        price = deal.get('價格', '').strip()
-        platform = deal.get('平台', '').strip()
-        img_url = deal.get('圖片網址', '').strip()
-        buy_url = deal.get('你的分潤短網址', '').strip()
-        
-        # 進行網址編碼
-        # (原本代碼的編碼邏輯)
-        encoded_buy_url = urllib.parse.quote(buy_url, safe=':/?&=')
-        encoded_img_url = urllib.parse.quote(img_url, safe=':/?&=')
-        
-        # 圖片網址保底
-        final_img_url = encoded_img_url if encoded_img_url.startswith("http") else default_img
-        
-        # 內文說明限制最多 60 字 (避免 LINE 報錯)
-        desc_text = f"🔥 特價: {price}\n平台: {platform}"[:60]
-        
-        column = {
-            "thumbnailImageUrl": final_img_url,
-            "imageBackgroundColor": "#FFFFFF",
-            "title": product_name[:40], # 標題最多40字
-            "text": desc_text,
-            "defaultAction": {
-                "type": "uri",
-                "label": "查看詳情",
-                "uri": encoded_buy_url
-            },
-            "actions": [
-                {
-                    "type": "uri",
-                    "label": "🛒 前往搶購 🛒",
-                    "uri": encoded_buy_url
-                }
-            ]
-        }
-        columns.append(column)
-        
-    return {
-        "type": "template",
-        "altText": "最新優惠來囉！請在手機上查看",
-        "template": {
-            "type": "carousel",
-            "columns": columns,
-            "imageAspectRatio": "square",
-            "imageSize": "cover"
-        }
-    }
-
-# ==========================================
-# Helper 函數：產生 sub_id (用於轉址追蹤)
-# ==========================================
-def build_sub_id():
-    # 設定台北時區，Render 環境通常是 UTC
-    taipei_tz = pytz.timezone('Asia/Taipei')
-    now = datetime.datetime.now(taipei_tz)
-    # 對應 yyyyMMddHHmmss 格式
-    ts = now.strftime('%Y%m%d%H%M%S')
-    return f"linebot-{ts}"
-
+    columns = []
+    for deal in deals[:10]: # LINE 滑動卡片最多只能放 10 頁
+        encoded_url = urllib.parse.quote(deal.get('你的分潤短網址', ''), safe=':/?&=')
+        encoded_image_url = urllib.parse.quote(deal.get('圖片網址', ''), safe=':/?&=')
+        
+        column = {
+            "thumbnailImageUrl": encoded_image_url,
+            "imageBackgroundColor": "#FFFFFF",
+            "title": deal.get('商品名稱', '')[:40],
+            "text": f"🔥 特價: {deal.get('價格', '')}\n平台: {deal.get('平台', '')}",
+            "defaultAction": {
+                "type": "uri",
+                "label": "查看詳情",
+                "uri": encoded_url
+            },
+            "actions": [
+                {
+                    "type": "uri",
+                    "label": "👉 前往搶購",
+                    "uri": encoded_url
+                }
+            ]
+        }
+        columns.append(column)
+        
+    return {
+        "type": "template",
+        "altText": "最新優惠來囉！請在手機上查看",
+        "template": {
+            "type": "carousel",
+            "columns": columns,
+            "imageAspectRatio": "square",
+            "imageSize": "cover"
+        }
+    }
 # ==========================================
 # 🤖 5. 處理 LINE 傳來訊息的主程式 (Webhook)
 # ==========================================
@@ -173,74 +130,80 @@ def webhook():
                             ]
                         }
                     }
-                    
-                # --------------------------------------------------
-                # 情境 B：呼叫「分類大廳」選單
-                # --------------------------------------------------
-                elif user_message in ["分類", "目錄", "特價商品"]:
-                    reply_message = {
-                        "type": "template",
-                        "altText": "請選擇您想看的特價分類",
-                        "template": {
-                            "type": "buttons",
-                            "title": "🛍️ 嚴選特價分類大廳",
-                            "text": "請點擊下方按鈕，逛逛今日專屬優惠！",
-                            "actions": [
-                                { "type": "message", "label": "💄 美妝保養", "text": "找美妝" },
-                                { "type": "message", "label": "💻 3C家電", "text": "找3C" },
-                                { "type": "message", "label": "🍼 母嬰用品", "text": "找母嬰" },
-                                { "type": "message", "label": "🏠 居家生活", "text": "找居家" }
-                            ]
-                        }
-                    }
-                    
-                # --------------------------------------------------
-                # 🤫 (💥【修正核心】：完全刪除原本的情境 C 靜音關鍵字邏輯！讓酷澎不再被吞掉！)
-                # --------------------------------------------------
-                    
-                # --------------------------------------------------
-                # 情境 D：處理關鍵字與分類暗號 (原本的 else)
-                # --------------------------------------------------
-                else:
-                    all_deals = get_deals_from_sheet(SHEET_ID)
-                    
-                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
-                    # 對應截圖中 image_5.png 的 A 欄，支援多關鍵字比對
-                    matched_deals = []
-                    if all_deals:
-                        for deal in all_deals:
-                            cell_keywords = deal.get('觸發關鍵字', '')
-                            # 將 A,B,C 轉成 ["A", "B", "C"] 並去除空白
-                            keyword_list = [k.strip() for k in cell_keywords.split(',')]
-                            
-                            if user_message in keyword_list:
-                                matched_deals.append(deal)
-                    
-                    # 如果有找到匹配的特價商品
-                    if matched_deals:
-                        # 呼叫函數產生輪播卡片 (Carousel)
-                        reply_message = create_carousel_message(matched_deals)
-                    else:
-                        # 如果輸入的關鍵字沒有對應商品，就保持預設台詞
-                        pass
-                        
-                # --------------------------------------------------
-                # 將結果回傳給使用者
-                # --------------------------------------------------
-                headers = {
-                    'Authorization': f'Bearer {LINE_TOKEN}',
-                    'Content-Type': 'application/json'
-                }
-                data = {
-                    "replyToken": reply_token,
-                    "messages": [reply_message] # 將卡片或文字訊息打包發送
-                }
-                # 使用原本代碼的 requests 發送 Reply
-                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
-                
-    return 'OK'
+                # --------------------------------------------------
+                # 情境 B：呼叫「分類大廳」選單
+                # --------------------------------------------------
+                elif user_message in ["分類", "目錄", "特價商品"]:
+                    reply_message = {
+                        "type": "template",
+                        "altText": "請選擇您想看的特價分類",
+                        "template": {
+                            "type": "buttons",
+                            "title": "🛍️ 嚴選特價分類大廳",
+                            "text": "請點擊下方按鈕，逛逛今日專屬優惠！",
+                            "actions": [
+                                {
+                                    "type": "message",
+                                    "label": "💄 美妝保養",
+                                    "text": "找美妝"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "💻 3C家電",
+                                    "text": "找3C"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "🍼 母嬰用品",
+                                    "text": "找母嬰"
+                                },
+                                {
+                                    "type": "message",
+                                    "label": "🏠 居家生活",
+                                    "text": "找居家"
+                                }
+                            ]
+                        }
+                    }
+                    
+                # --------------------------------------------------
+                # 🤫 情境 C：讓 Python 閉嘴的「靜音關鍵字」
+                # --------------------------------------------------
+                elif user_message in ["推廣優惠券"]:
+                    # 交給 LINE 官方後台回覆，Python 跳過不處理
+                    continue
+                    
+                # --------------------------------------------------
+                # 情境 D：處理關鍵字與分類暗號
+                # --------------------------------------------------
+                else:
+                    all_deals = get_deals_from_sheet(SHEET_ID)
+                    
+                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
+                    matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
+                    
+                    if matched_deals:
+                        reply_message = create_carousel_message(matched_deals)
+                    else:
+                        reply_message = {
+                            "type": "text",
+                            "text": "目前沒有找到相關的優惠喔！\n你可以輸入【分類】來查看特價目錄，或直接貼上你想買的商品網址給我幫你找優惠！"
+                        }
+                        
+                # --------------------------------------------------
+                # 將結果回傳給使用者
+                # --------------------------------------------------
+                headers = {
+                    'Authorization': f'Bearer {LINE_TOKEN}',
+                    'Content-Type': 'application/json'
+                }
+                data = {
+                    "replyToken": reply_token,
+                    "messages": [reply_message]
+                }
+                requests.post('https://api.line.me/v2/bot/message/reply', headers=headers, json=data)
+                
+    return 'OK'
 
 if __name__ == "__main__":
-    # Render 會自動設定 PORT，萬一沒有就用保底 10000
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=10000)
