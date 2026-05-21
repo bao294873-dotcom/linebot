@@ -161,11 +161,11 @@ def webhook():
                         "template": {
                             "type": "buttons",
                             "title": "🎁 專屬優惠連結已產生 🎁",
-                            "text": "⚠️ 點選下方按鈕前往查看\n❗ 若有優惠券將自動保留\n📅 請盡速結帳保留優惠",
+                            "text": "⚠️ 優惠劵數量有限\n⏰ 請儘速完成訂單\n🔥 點擊下方立即結帳享折扣",
                             "actions": [
                                 {
                                     "type": "uri",
-                                    "label": "🛒 點我前往查看 🛒",
+                                    "label": "🛒 出發～買買買 🛒",
                                     "uri": target_url
                                 }
                             ]
