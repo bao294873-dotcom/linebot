@@ -143,18 +143,22 @@ def webhook():
                 # 對應截圖 image_0.png 的通用台詞
                 reply_message = {
                     "type": "text",
-                    "text": "請傳送蝦皮商品連結傳給我，我幫你轉成優惠連結 🛍️\n\n或輸入特定關鍵字查看隱藏優惠！"
+                    "text": "請傳送蝦皮商品連結傳給我，我幫你轉成優惠連結 🛍️\n\n或輸入蝦皮/酷澎查看隱藏優惠！"
                 }
-
                 # --------------------------------------------------
                 # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
                 # --------------------------------------------------
-                if user_message.startswith("http"):
+                # 🔍 使用雷達 (正則表達式) 掃描文字中是否有網址
+                url_match = re.search(r'(https?://[^\s]+)', user_message)
+                
+                if url_match:
+                    # 如果有找到網址，把它單獨抽出來
+                    extracted_url = url_match.group(1)
                     
-                    # 💥【唯一更改的地方】：換成你指定的升級版轉址邏輯
-                    target_url = convert_shopee_link(user_message, SHOPEE_AFF_ID)
-                    
-                    # 建立華麗的「按鈕模板訊息」 (你原本的卡片代碼，完全沒動)
+                    # 把抽出來的純網址丟進去轉址
+                    target_url = convert_shopee_link(extracted_url, SHOPEE_AFF_ID)                    
+                
+                # 建立華麗的「按鈕模板訊息」 (你原本的卡片代碼，完全沒動)
                     reply_message = {
                         "type": "template",
                         "altText": "🎁 專屬優惠連結已產生！請查看",
