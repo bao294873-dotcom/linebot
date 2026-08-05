@@ -3,8 +3,9 @@ import requests
 import urllib.parse
 import csv
 from io import StringIO
-import re            # 新增：為了升級版轉址
-import datetime      # 新增：為了升級版轉址產生時間戳
+import re             # 升級版轉址與網址比對
+import datetime       # 升級版轉址產生時間戳
+from curl_cffi import requests as cffi_requests  # 關鍵：用於繞過蝦皮 403 阻擋
 
 app = Flask(__name__)
 
@@ -13,7 +14,7 @@ app = Flask(__name__)
 # ==========================================
 LINE_TOKEN = 'MMsqceAeEexXHCQ/EWwzzmLTg/WCBrg+vA7FxHXZCrxWHkscjIDJuf0EJ9V0n4MR3NwrF6h0M91KK+PGPpyNtr Y5z5YYJ1nHk2Z34b/Z+pkT+ULTxjfZ5ONg+G7i6fpJl5sTjvon6roCQQQGRT2RCwdB04t89/1O/w1cDnyilFU='
 SHEET_ID = '1mArqvVEM6AISWVefz2_UjCe23LeJ6DAZQTlJIAlrCXk'         # 你的試算表 ID
-SHOPEE_AFF_ID = "16358460019"              # 你的蝦皮分潤 ID
+SHOPEE_AFF_ID = "16358460019"    # 你的蝦皮分潤 ID
 
 
 # ==========================================
@@ -80,33 +81,38 @@ def create_carousel_message(deals):
     }
 
 # ==========================================
-# 🛠️ 新增：升級版蝦皮轉址核心 (從你給的版本移植)
+# 🛠️ 升級版蝦皮轉址核心 (已加入 curl_cffi 破解 403)
 # ==========================================
 def build_sub_id():
-    # 直接用內建 datetime 處理台灣時間 (UTC+8)，不用額外安裝 pytz
+    # 直接用內建 datetime 處理台灣時間 (UTC+8)
     tz_tw = datetime.timezone(datetime.timedelta(hours=8))
     now = datetime.datetime.now(tz_tw)
     return f"linebot-{now.strftime('%Y%m%d%H%M%S')}"
 
 def convert_shopee_link(original_url, aff_id):
     url = original_url
+    
     # 1. 處理 an_redir 包過的連結
     if 'an_redir' in url:
         match = re.search(r'origin_link=([^&]+)', url)
         if match:
             url = urllib.parse.unquote(match.group(1))
 
-    # 2. 展開短網址
-    is_short_url = re.search(r'shp\.ee|shope\.ee|s\.shopee\.tw', url, re.IGNORECASE)
+    # 2. 展開短網址 (使用 curl_cffi 繞過 ALB 403 防火牆)
+    is_short_url = re.search(r'shp\.ee|shope\.ee|s\.shopee\.tw|tw\.shp\.ee', url, re.IGNORECASE)
     if is_short_url and 'an_redir' not in url:
         try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            resp = requests.get(url, allow_redirects=False, headers=headers, timeout=5)
-            if resp.status_code >= 300 and resp.status_code < 400:
-                loc = resp.headers.get('Location')
-                if loc and 'shopee.tw' in loc.lower():
-                    url = loc
-        except Exception:
+            # impersonate="chrome120" 模擬真實 Chrome 瀏覽器 TLS 指紋
+            resp = cffi_requests.get(
+                url, 
+                impersonate="chrome120", 
+                allow_redirects=True, 
+                timeout=8
+            )
+            if resp.status_code == 200 and resp.url:
+                url = resp.url
+        except Exception as e:
+            print(f"[短網址展開失敗] {e}")
             pass
 
     # 3. 清理舊的追蹤參數
@@ -124,7 +130,6 @@ def convert_shopee_link(original_url, aff_id):
 # ==========================================
 @app.route("/", methods=['POST'])
 def webhook():
-    # 防止多個 Google 帳號造成的 Token 混亂，加上錯誤抓取機制
     try:
         body = request.get_json()
     except Exception as e:
@@ -136,29 +141,25 @@ def webhook():
             # 處理文字訊息
             if event['type'] == 'message' and event['message']['type'] == 'text':
                 reply_token = event['replyToken']
-                # 用戶輸入的字，去除空白
                 user_message = event['message']['text'].strip()
                 
                 # 預設回覆訊息
-                # 對應截圖 image_0.png 的通用台詞
                 reply_message = {
                     "type": "text",
                     "text": "請傳送蝦皮商品連結傳給我，我幫你轉成優惠連結 🛍️\n\n或輸入蝦皮/酷澎查看隱藏優惠！"
                 }
+                
                 # --------------------------------------------------
                 # 情境 A：使用者傳送「網址」(觸發單一按鈕結帳卡片)
                 # --------------------------------------------------
-                # 🔍 使用雷達 (正則表達式) 掃描文字中是否有網址
                 url_match = re.search(r'(https?://[^\s]+)', user_message)
                 
                 if url_match:
-                    # 如果有找到網址，把它單獨抽出來
                     extracted_url = url_match.group(1)
                     
                     # 把抽出來的純網址丟進去轉址
                     target_url = convert_shopee_link(extracted_url, SHOPEE_AFF_ID)                    
                 
-                # 建立華麗的「按鈕模板訊息」 (你原本的卡片代碼，完全沒動)
                     reply_message = {
                         "type": "template",
                         "altText": "🎁 專屬優惠連結已產生！請查看",
@@ -213,10 +214,9 @@ def webhook():
                     }
                     
                 # --------------------------------------------------
-                # 🤫 情境 C：讓 Python 閉嘴的「靜音關鍵字」
+                # 情境 C：讓 Python 閉嘴的「靜音關鍵字」
                 # --------------------------------------------------
                 elif user_message in ["推廣優惠券"]:
-                    # 交給 LINE 官方後台回覆，Python 跳過不處理
                     continue
                     
                 # --------------------------------------------------
@@ -225,7 +225,6 @@ def webhook():
                 else:
                     all_deals = get_deals_from_sheet(SHEET_ID)
                     
-                    # 篩選出「觸發關鍵字」欄位符合使用者輸入的資料
                     matched_deals = [d for d in all_deals if user_message in d.get('觸發關鍵字', '')]
                     
                     if matched_deals:
