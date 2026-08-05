@@ -1,2 +1,4 @@
 flask
 requests
+APScheduler==3.10.1
+curl_cffi
